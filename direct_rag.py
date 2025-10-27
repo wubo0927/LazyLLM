@@ -155,16 +155,6 @@ def get_gpa_info():
 print("正在加载PDF文档...")
 load_all_documents()
 
-# 创建智能助手（全局唯一实例）
-agent = ReactAgent(
-    llm=OnlineChatModule(stream=False),
-    tools=['search_student_info', 'get_frontend_experience', 'get_gpa_info'],
-    prompt="""你是一个智能文档分析助手，能够基于提供的文档内容回答关于学生信息的问题。
-请根据用户的问题，调用相应的工具搜索文档信息，并基于找到的信息给出准确、详细的回答。
-重点关注学生的技能、经验、GPA等信息。""",
-    stream=False
-)
-
 # 启动交互式对话
 print("\n=== 基于PDF文档的RAG问答系统 ===")
 print("已加载的文档数量:", len(DOCUMENTS))
@@ -186,9 +176,19 @@ while True:
             print("请输入有效的问题")
             continue
         
-        # 使用agent回答用户问题
+        # 为每次对话创建新的agent实例，避免会话状态污染
+        fresh_agent = ReactAgent(
+            llm=OnlineChatModule(stream=False),
+            tools=['search_student_info', 'get_frontend_experience', 'get_gpa_info'],
+            prompt="""你是一个智能文档分析助手，能够基于提供的文档内容回答关于学生信息的问题。
+请根据用户的问题，调用相应的工具搜索文档信息，并基于找到的信息给出准确、详细的回答。
+重点关注学生的技能、经验、GPA等信息。""",
+            stream=False
+        )
+        
+        # 使用新agent回答用户问题
         print("\n正在思考...")
-        response = agent.forward(query)
+        response = fresh_agent.forward(query)
         print(f"\n回答: {response}")
         print("-" * 60)
         
