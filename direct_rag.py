@@ -177,6 +177,36 @@ print("已加载的文档数量:", len(DOCUMENTS))
 print("输入 'quit' 或 'exit' 退出对话\n")
 print("-" * 60)
 
+# 对话上下文记忆
+conversation_memory = []
+
+def create_agent_with_memory():
+    """创建带有上下文记忆的agent"""
+    # 构建包含对话记忆的prompt
+    memory_prompt = """你是一个智能文档分析助手，能够基于提供的文档内容回答关于学生信息的问题。
+请根据用户的问题，调用相应的工具搜索文档信息，并基于找到的信息给出准确、详细的回答。
+重点关注学生的技能、经验、GPA等信息。
+
+重要提示：当用户提到"他"、"她"、"这个人"、"这个同学"等代词时，请参考对话历史中提到的具体人员信息。
+如果是首次对话中没有明确提到具体人物，请主动调用工具搜索相关学生信息。
+"""
+    
+    # 如果有对话记忆，添加到prompt中
+    if conversation_memory:
+        memory_prompt += "\n\n【对话历史摘要】：\n"
+        for i, memory in enumerate(conversation_memory, 1):
+            memory_prompt += f"{i}. {memory}\n"
+    
+    return ReactAgent(
+        llm=OnlineChatModule(stream=False),
+        tools=['search_student_info', 'get_frontend_experience', 'get_gpa_info'],
+        prompt=memory_prompt,
+        stream=False
+    )
+
+# 创建第一个agent
+agent = create_agent_with_memory()
+
 while True:
     try:
         # 获取用户输入
@@ -192,28 +222,45 @@ while True:
             print("请输入有效的问题")
             continue
         
-        # 为每个问题创建新的agent实例，避免会话状态污染
-        # 这样每次都是独立的对话，不会有上下文残留问题
-        agent = ReactAgent(
-            llm=OnlineChatModule(stream=False),
-            tools=['search_student_info', 'get_frontend_experience', 'get_gpa_info'],
-            prompt="""你是一个智能文档分析助手，能够基于提供的文档内容回答关于学生信息的问题。
-请根据用户的问题，调用相应的工具搜索文档信息，并基于找到的信息给出准确、详细的回答。
-重点关注学生的技能、经验、GPA等信息。
-
-你可以调用工具来搜索任何学生信息，包括对比多个学生。工具会自动返回相关信息，你只需要基于返回的信息进行回答。""",
-            stream=False
-        )
-        
         # 使用agent回答用户问题
         print("\n正在思考...")
         response = agent.forward(query)
         print(f"\n回答: {response}")
         print("-" * 60)
         
+        # 使用LLM提取本次对话的关键信息并保存到记忆
+        try:
+            memory_extractor = OnlineChatModule(stream=False)
+            memory_prompt = f"""请用一句话简洁地总结以下对话的关键信息（不超过50字）：
+用户问题：{query}
+AI回答：{response[:300]}... （仅作为参考，请概括关键信息）
+
+要求：如果是关于特定学生的信息，请说明学生姓名和关键点；如果是对比，请说明对比的学生和要点。"""
+            memory_summary = memory_extractor(memory_prompt)
+            
+            # 保存记忆（最多保留最近10条）
+            conversation_memory.append(f"{memory_summary[:80]}")
+            if len(conversation_memory) > 10:
+                conversation_memory.pop(0)
+                
+        except:
+            # 如果提取失败，简单记录
+            conversation_memory.append(f"用户问：{query[:50]}...")
+            if len(conversation_memory) > 10:
+                conversation_memory.pop(0)
+        
+        # 每次对话后重新创建agent，避免会话状态污染
+        agent = create_agent_with_memory()
+        
     except KeyboardInterrupt:
         print("\n\n程序被用户中断")
         break
     except Exception as e:
         print(f"\n处理问题时出现错误: {e}")
+        
+        # 如果是因为会话状态污染导致的错误，重新创建agent
+        if "tool_calls" in str(e) or "tool_call_id" in str(e):
+            print("检测到会话状态问题，已自动处理")
+            agent = create_agent_with_memory()
+        
         print("-" * 60)
