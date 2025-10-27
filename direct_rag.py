@@ -58,25 +58,52 @@ def load_all_documents():
 @fc_register("tool")
 def search_student_info(query: str):
     """
-    搜索学生相关信息
+    搜索学生相关信息。可以搜索单个学生或多个学生的信息进行对比。
     
     Args:
-        query (str): 搜索查询
+        query (str): 搜索查询，可以是学生姓名、技能、学校等信息
+    
+    Returns:
+        str: JSON格式的学生信息
     """
     try:
         results = []
         query_lower = query.lower()
         
+        # 检查是否是多个学生的对比查询
+        is_comparison = "对比" in query or "比较" in query or "与" in query
+        
         for filename, content in DOCUMENTS.items():
-            if query_lower in content.lower():
-                # 找到包含查询内容的段落
-                paragraphs = content.split('\n\n')
-                for para in paragraphs:
-                    if query_lower in para.lower() and para.strip():
+            # 如果是简历文件，直接返回整个内容用于对比
+            if "简历" in filename and is_comparison:
+                student_names = ["张伟", "李晨", "王小明"]
+                for name in student_names:
+                    if name in query and name in filename:
                         results.append({
                             "document": filename,
-                            "content": para.strip()[:500]  # 限制长度
+                            "content": content[:1500]  # 返回更多内容用于对比
                         })
+                        break
+            elif "简历" in filename:
+                # 单个学生查询
+                if any(name in query for name in ["张伟", "李晨", "王小明"]):
+                    if any(name in filename for name in ["张伟", "李晨", "王小明"]):
+                        results.append({
+                            "document": filename,
+                            "content": content[:1500]
+                        })
+            else:
+                # 非简历文件，按关键词搜索
+                if query_lower in content.lower():
+                    paragraphs = content.split('\n\n')
+                    for para in paragraphs:
+                        if query_lower in para.lower() and para.strip():
+                            results.append({
+                                "document": filename,
+                                "content": para.strip()[:500]
+                            })
+                            if len(results) >= 5:  # 限制结果数量
+                                break
         
         if results:
             return json.dumps(results, ensure_ascii=False)
