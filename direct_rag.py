@@ -58,10 +58,11 @@ def load_all_documents():
 @fc_register("tool")
 def search_student_info(query: str):
     """
-    搜索学生相关信息。可以搜索单个学生或多个学生的信息进行对比。
+    搜索学生相关信息。这个函数会自动理解查询意图，返回相关的学生信息。
+    支持搜索单个学生或多个学生的信息，支持各种表达方式，让LLM自己理解意图。
     
     Args:
-        query (str): 搜索查询，可以是学生姓名、技能、学校等信息
+        query (str): 搜索查询，可以是任何相关的问题或关键词
     
     Returns:
         str: JSON格式的学生信息
@@ -71,39 +72,27 @@ def search_student_info(query: str):
         query_lower = query.lower()
         
         # 检查是否是多个学生的对比查询
-        is_comparison = "对比" in query or "比较" in query or "与" in query
+        # 不再手动判断对比查询，让LLM自己理解
         
         for filename, content in DOCUMENTS.items():
             # 如果是简历文件，直接返回整个内容用于对比
-            if "简历" in filename and is_comparison:
-                student_names = ["张伟", "李晨", "王小明"]
-                for name in student_names:
-                    if name in query and name in filename:
-                        results.append({
-                            "document": filename,
-                            "content": content[:1500]  # 返回更多内容用于对比
-                        })
-                        break
-            elif "简历" in filename:
-                # 单个学生查询
-                if any(name in query for name in ["张伟", "李晨", "王小明"]):
-                    if any(name in filename for name in ["张伟", "李晨", "王小明"]):
-                        results.append({
-                            "document": filename,
-                            "content": content[:1500]
-                        })
-            else:
+            if "简历" in filename:
+                # 返回所有包含查询关键词的学生简历
+                results.append({
+                    "document": filename,
+                    "content": content[:2000]  # 返回足够的内容让LLM理解
+                })
+            elif query_lower in content.lower():
                 # 非简历文件，按关键词搜索
-                if query_lower in content.lower():
-                    paragraphs = content.split('\n\n')
-                    for para in paragraphs:
-                        if query_lower in para.lower() and para.strip():
-                            results.append({
-                                "document": filename,
-                                "content": para.strip()[:500]
-                            })
-                            if len(results) >= 5:  # 限制结果数量
-                                break
+                paragraphs = content.split('\n\n')
+                for para in paragraphs:
+                    if query_lower in para.lower() and para.strip():
+                        results.append({
+                            "document": filename,
+                            "content": para.strip()[:1000]
+                        })
+                        if len(results) >= 10:
+                            break
         
         if results:
             return json.dumps(results, ensure_ascii=False)
@@ -188,19 +177,6 @@ print("已加载的文档数量:", len(DOCUMENTS))
 print("输入 'quit' 或 'exit' 退出对话\n")
 print("-" * 60)
 
-# 创建全局agent实例，支持上下文对话
-agent = ReactAgent(
-    llm=OnlineChatModule(stream=False),
-    tools=['search_student_info', 'get_frontend_experience', 'get_gpa_info'],
-    prompt="""你是一个智能文档分析助手，能够基于提供的文档内容回答关于学生信息的问题。
-请根据用户的问题，调用相应的工具搜索文档信息，并基于找到的信息给出准确、详细的回答。
-重点关注学生的技能、经验、GPA等信息。
-
-重要提示：当用户提到"他"、"她"、"这个人"、"这个同学"等代词时，请参考对话历史中提到的具体人员信息。
-如果是首次对话中没有明确提到具体人物，请主动调用工具搜索相关学生信息。""",
-    stream=False
-)
-
 while True:
     try:
         # 获取用户输入
@@ -216,7 +192,20 @@ while True:
             print("请输入有效的问题")
             continue
         
-        # 使用agent回答用户问题（保持上下文）
+        # 为每个问题创建新的agent实例，避免会话状态污染
+        # 这样每次都是独立的对话，不会有上下文残留问题
+        agent = ReactAgent(
+            llm=OnlineChatModule(stream=False),
+            tools=['search_student_info', 'get_frontend_experience', 'get_gpa_info'],
+            prompt="""你是一个智能文档分析助手，能够基于提供的文档内容回答关于学生信息的问题。
+请根据用户的问题，调用相应的工具搜索文档信息，并基于找到的信息给出准确、详细的回答。
+重点关注学生的技能、经验、GPA等信息。
+
+你可以调用工具来搜索任何学生信息，包括对比多个学生。工具会自动返回相关信息，你只需要基于返回的信息进行回答。""",
+            stream=False
+        )
+        
+        # 使用agent回答用户问题
         print("\n正在思考...")
         response = agent.forward(query)
         print(f"\n回答: {response}")
@@ -227,21 +216,4 @@ while True:
         break
     except Exception as e:
         print(f"\n处理问题时出现错误: {e}")
-        
-        # 如果是因为会话状态污染导致的错误，创建新的agent实例
-        if "tool_calls" in str(e) or "tool_call_id" in str(e):
-            print("检测到会话状态问题，正在重新初始化...")
-            agent = ReactAgent(
-                llm=OnlineChatModule(stream=False),
-                tools=['search_student_info', 'get_frontend_experience', 'get_gpa_info'],
-                prompt="""你是一个智能文档分析助手，能够基于提供的文档内容回答关于学生信息的问题。
-请根据用户的问题，调用相应的工具搜索文档信息，并基于找到的信息给出准确、详细的回答。
-重点关注学生的技能、经验、GPA等信息。
-
-重要提示：当用户提到"他"、"她"、"这个人"、"这个同学"等代词时，请参考对话历史中提到的具体人员信息。
-如果是首次对话中没有明确提到具体人物，请主动调用工具搜索相关学生信息。""",
-                stream=False
-            )
-            print("已重新初始化，请重新提问")
-        
         print("-" * 60)
