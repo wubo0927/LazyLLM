@@ -161,6 +161,19 @@ print("已加载的文档数量:", len(DOCUMENTS))
 print("输入 'quit' 或 'exit' 退出对话\n")
 print("-" * 60)
 
+# 创建全局agent实例，支持上下文对话
+agent = ReactAgent(
+    llm=OnlineChatModule(stream=False),
+    tools=['search_student_info', 'get_frontend_experience', 'get_gpa_info'],
+    prompt="""你是一个智能文档分析助手，能够基于提供的文档内容回答关于学生信息的问题。
+请根据用户的问题，调用相应的工具搜索文档信息，并基于找到的信息给出准确、详细的回答。
+重点关注学生的技能、经验、GPA等信息。
+
+重要提示：当用户提到"他"、"她"、"这个人"、"这个同学"等代词时，请参考对话历史中提到的具体人员信息。
+如果是首次对话中没有明确提到具体人物，请主动调用工具搜索相关学生信息。""",
+    stream=False
+)
+
 while True:
     try:
         # 获取用户输入
@@ -176,19 +189,9 @@ while True:
             print("请输入有效的问题")
             continue
         
-        # 为每次对话创建新的agent实例，避免会话状态污染
-        fresh_agent = ReactAgent(
-            llm=OnlineChatModule(stream=False),
-            tools=['search_student_info', 'get_frontend_experience', 'get_gpa_info'],
-            prompt="""你是一个智能文档分析助手，能够基于提供的文档内容回答关于学生信息的问题。
-请根据用户的问题，调用相应的工具搜索文档信息，并基于找到的信息给出准确、详细的回答。
-重点关注学生的技能、经验、GPA等信息。""",
-            stream=False
-        )
-        
-        # 使用新agent回答用户问题
+        # 使用agent回答用户问题（保持上下文）
         print("\n正在思考...")
-        response = fresh_agent.forward(query)
+        response = agent.forward(query)
         print(f"\n回答: {response}")
         print("-" * 60)
         
@@ -197,4 +200,21 @@ while True:
         break
     except Exception as e:
         print(f"\n处理问题时出现错误: {e}")
+        
+        # 如果是因为会话状态污染导致的错误，创建新的agent实例
+        if "tool_calls" in str(e) or "tool_call_id" in str(e):
+            print("检测到会话状态问题，正在重新初始化...")
+            agent = ReactAgent(
+                llm=OnlineChatModule(stream=False),
+                tools=['search_student_info', 'get_frontend_experience', 'get_gpa_info'],
+                prompt="""你是一个智能文档分析助手，能够基于提供的文档内容回答关于学生信息的问题。
+请根据用户的问题，调用相应的工具搜索文档信息，并基于找到的信息给出准确、详细的回答。
+重点关注学生的技能、经验、GPA等信息。
+
+重要提示：当用户提到"他"、"她"、"这个人"、"这个同学"等代词时，请参考对话历史中提到的具体人员信息。
+如果是首次对话中没有明确提到具体人物，请主动调用工具搜索相关学生信息。""",
+                stream=False
+            )
+            print("已重新初始化，请重新提问")
+        
         print("-" * 60)
