@@ -155,7 +155,7 @@ def get_gpa_info():
 print("正在加载PDF文档...")
 load_all_documents()
 
-# 创建智能助手
+# 创建智能助手（全局唯一实例）
 agent = ReactAgent(
     llm=OnlineChatModule(stream=False),
     tools=['search_student_info', 'get_frontend_experience', 'get_gpa_info'],
@@ -165,36 +165,36 @@ agent = ReactAgent(
     stream=False
 )
 
-# 测试问题
-questions = [
-    "如果想选用一名同学负责前端，谁可能比较有经验?",
-    "李晨是一个怎样的同学?", 
-    "张伟的GPA是不是最高的?"
-]
-
+# 启动交互式对话
 print("\n=== 基于PDF文档的RAG问答系统 ===")
 print("已加载的文档数量:", len(DOCUMENTS))
+print("输入 'quit' 或 'exit' 退出对话\n")
+print("-" * 60)
 
-for i, question in enumerate(questions, 1):
-    print(f"\n问题 {i}: {question}")
-    print("-" * 60)
-    
+while True:
     try:
-        # 为每个问题创建新的agent实例，避免会话状态污染
-        fresh_agent = ReactAgent(
-            llm=OnlineChatModule(stream=False),
-            tools=['search_student_info', 'get_frontend_experience', 'get_gpa_info'],
-            prompt="""你是一个智能文档分析助手，能够基于提供的文档内容回答关于学生信息的问题。
-请根据用户的问题，调用相应的工具搜索文档信息，并基于找到的信息给出准确、详细的回答。
-重点关注学生的技能、经验、GPA等信息。""",
-            stream=False
-        )
+        # 获取用户输入
+        query = input("\n请输入您的问题: ").strip()
         
-        response = fresh_agent.forward(question)
-        print(f"回答: {response}")
+        # 检查是否退出
+        if query.lower() in ['quit', 'exit', '退出']:
+            print("\n感谢使用！再见！")
+            break
+        
+        # 如果输入为空，提示用户
+        if not query:
+            print("请输入有效的问题")
+            continue
+        
+        # 使用agent回答用户问题
+        print("\n正在思考...")
+        response = agent.forward(query)
+        print(f"\n回答: {response}")
+        print("-" * 60)
+        
+    except KeyboardInterrupt:
+        print("\n\n程序被用户中断")
+        break
     except Exception as e:
-        print(f"处理问题时出现错误: {e}")
-    
-    print("-" * 60)
-
-print("\n=== 问答完成 ===")
+        print(f"\n处理问题时出现错误: {e}")
+        print("-" * 60)
